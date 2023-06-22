@@ -7,3 +7,4 @@ edition = "2021"
 
 [dependencies]
 ark-poly = "0.4.2"  # Cool library for polynomial arithmetic.
+ark-ff = "0.4.2" # Cool library for finite field arithmetic. 
