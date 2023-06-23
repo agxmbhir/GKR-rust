@@ -1,7 +1,7 @@
 use std::ops::Add;
 
 use ark_poly::{ multivariate::{SparsePolynomial, Term}, univariate::SparsePolynomial as UniSparsePolynomial};
-use ark_ff::{Field, Zero, Fp};
+use ark_ff::{Field, Zero};
 
 // 
 struct Prover<F: Field, T: Term> {
@@ -36,42 +36,44 @@ impl<F: Field, T: Term>  Prover<F, T> {
         // We repeat the above process for g_1, g_2, ... g_n
         // We then interpolate the above vector to get g 
         let mut g = UniSparsePolynomial::<F>::zero();
-        let mut f = self.f.clone();
-        let f_vars = get_vars(f.clone());
-        let fixed_var =  f_vars[f.num_vars - step];
-
+        let f = self.f.clone();
+        // Vars = (degree, index)
         for param in params { 
             // Evaluation of f at point (X, ... a_i)
             let mut f_i: Vec<(usize, F)> = Vec::<(usize, F)>::new();
             // Going through each term in f, and evaluating it at point (..r_i, X, ... a_i)
-            for term in &f.terms {
+            for term in f.terms.iter() {
                 let (coeff, vars) = term.clone();
-                let mut term_eval = coeff;
+                let mut term_eval = coeff.clone();
                 let mut prod = F::one();
                 let mut contains_fixed_var = false;
                 let mut fixed_var_degree = 0;
                 // for each var in term, we multiply it by a_i except for the one that is X
-                if vars.contains(&fixed_var) {
-                    contains_fixed_var = true;
-                    fixed_var_degree = vars[fixed_var.0].0;
+                if vars.is_empty() {
+                    f_i.push((0, coeff));
+                    break;
                 }
+                println!("vars: {:?}", vars);
                 for var in vars.iter()  {
-                    if var != &fixed_var {
-                        let (var_index, _) = var.clone();
+                    let (var_index, var_degree) = var.clone();
+                    if var_index == step {
+                        contains_fixed_var = true;
+                        fixed_var_degree = var_degree;
+                    } else {
                         prod *= if param[var_index] {F::one()} else {F::zero()};
                     }
                 }
                 term_eval *= prod;
                 if term_eval != F::zero() {
                     if contains_fixed_var {
-                        &f_i.push((fixed_var_degree, term_eval));
+                        f_i.push((fixed_var_degree, term_eval));
                     } else {
-                        &f_i.push((0, term_eval));
+                        f_i.push((0, term_eval));
                     }
-                } 
+                }
+                
             } 
-            g.add(UniSparsePolynomial::<F>::from_coefficients_vec(f_i));
-             
+            g = g.add(UniSparsePolynomial::<F>::from_coefficients_vec(f_i));
         }
         return g;
     }
@@ -115,3 +117,43 @@ pub fn verify() -> bool {
     // 4. Return the result
     true
 } 
+
+#[cfg(test)]
+mod tests {
+    use ark_poly::{multivariate::{SparsePolynomial, SparseTerm, Term},
+     DenseMVPolynomial,
+    univariate::SparsePolynomial as UniSparsePolynomial
+    };
+    use ark_test_curves::fp128::Fq;
+    use super::Prover;
+
+    #[test]
+    fn test_get_univar_poly() {
+        let poly = SparsePolynomial::from_coefficients_vec(
+            3,
+            // 2*x_0^3 + x_0*x_2 + x_1*x_2 + 5
+            vec![
+                (Fq::from(2), SparseTerm::new(vec![(0, 3)])),
+                (Fq::from(1), SparseTerm::new(vec![(0, 1), (2, 1)])),
+                (Fq::from(1), SparseTerm::new(vec![(1, 1), (2, 1)])),
+                (Fq::from(5), SparseTerm::new(vec![])),
+            ]
+        );
+        let mut p = Prover::new(
+            poly
+        );
+
+        let uni_1 = p.get_univar_poly(0);
+        let exp = 
+        UniSparsePolynomial::from_coefficients_vec(
+            // 8x^3 + 2x + 21
+            vec![
+                (3, Fq::from(8)),
+                (1, Fq::from(2)),
+                (0, Fq::from(21)),
+               ]
+        );
+        assert_eq!(exp, uni_1);
+    
+    }
+}
