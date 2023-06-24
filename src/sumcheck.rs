@@ -1,9 +1,8 @@
 use std::ops::Add;
-
 use ark_poly::{ multivariate::{SparsePolynomial, Term}, univariate::SparsePolynomial as UniSparsePolynomial, Polynomial};
 use ark_ff::{Field, Zero};
+use rand::Rng;
 
-// 
 struct Prover<F: Field, T: Term> {
     f: SparsePolynomial<F, T>,  
 }
@@ -18,7 +17,6 @@ impl<F: Field, T: Term>  Prover<F, T> {
 
     // Returns the univariate polynomial g_i(x_i) for a given index i
     pub fn get_univar_poly(&mut self, step: usize) -> UniSparsePolynomial<F>{ 
-        
 
         let params = get_permutations(self.f.num_vars - 1, step); 
         let mut g = Vec::<(usize, F)>::new();
@@ -105,12 +103,19 @@ fn get_permutations(n: usize, fixed_index: usize) -> Vec<Vec<bool>> {
     permutations
 }
 
+fn get_random() ->  Option<Field>{
+	let mut rng = rand::thread_rng();
+	let r: Field = rng.gen();
+	Some(r)
+}
  
 pub fn verify<F: Field, T: Term>(poly: SparsePolynomial<F, T>, claim: F) -> bool {
     	// 1st round
 	let mut p = Prover::new(poly);
 	let mut gi = p.get_univar_poly(0);
 	let mut expected_c = gi.evaluate(&0u32.into()) + gi.evaluate(&1u32.into());
+    assert_eq!(expected_c, claim);
+
 
     true
 } 
