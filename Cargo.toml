@@ -9,3 +9,4 @@ edition = "2021"
 ark-poly = "0.4.2"  # Cool library for polynomial arithmetic.
 ark-ff = "0.4.2" # Cool library for finite field arithmetic. 
 ark-test-curves = "0.4.2"
+ark-bls12-381 = "0.4.0"
