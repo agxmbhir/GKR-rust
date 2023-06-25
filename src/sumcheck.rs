@@ -1,4 +1,4 @@
-use ark_ff::{BigInt, Field};
+use ark_ff::Field;
 use ark_poly::{
     multivariate::{SparsePolynomial, Term},
     univariate::SparsePolynomial as UniSparsePolynomial,
@@ -140,6 +140,19 @@ where
     let mut gi = p.get_univar_poly(0, get_random());
     let mut expected_c = gi.evaluate(&0u32.into()) + gi.evaluate(&1u32.into());
     assert_eq!(expected_c, claim);
+    // middle rounds
+    for j in 1..p.f.num_vars {
+        let r = get_random();
+        expected_c = gi.evaluate(&r);
+        gi = p.get_univar_poly(j, r);
+        let new_c = gi.evaluate(&0u32.into()) + gi.evaluate(&1u32.into());
+        assert_eq!(expected_c, new_c);
+    }
+    // final round
+    let r = get_random();
+    expected_c = gi.evaluate(&r);
+    let new_c = p.f.evaluate(&p.steps);
+    assert_eq!(expected_c, new_c);
 
     true
 }
@@ -173,7 +186,7 @@ mod tests {
         let uni_0 = p.get_univar_poly(0, get_random());
         let uni_1 = p.get_univar_poly(1, get_random());
         let uni_2 = p.get_univar_poly(2, get_random());
-        
+
         let exp1 = UniSparsePolynomial::from_coefficients_vec(
             // 8x^3 + 2x + 21
             vec![(3, Fq::from(8)), (1, Fq::from(2)), (0, Fq::from(21))],
@@ -201,5 +214,27 @@ mod tests {
         println!("uni_1: {:?}", uni_1);
         let eval = uni_1.evaluate(&0u32.into()) + uni_1.evaluate(&1u32.into());
         assert_eq!(eval, claimed_sum);
+    }
+
+    #[test]
+    fn test_verifier() {
+        // 1st round
+        let mut p = Prover::new(poly);
+        let mut gi = p.get_univar_poly(0, get_random());
+        let mut expected_c = gi.evaluate(&0u32.into()) + gi.evaluate(&1u32.into());
+        assert_eq!(expected_c, claim);
+        // middle rounds
+        for j in 1..p.f.num_vars {
+            let r = get_random();
+            expected_c = gi.evaluate(&r);
+            gi = p.get_univar_poly(j, r);
+            let new_c = gi.evaluate(&0u32.into()) + gi.evaluate(&1u32.into());
+            assert_eq!(expected_c, new_c);
+        }
+        // final round
+        let r = get_random();
+        expected_c = gi.evaluate(&r);
+        let new_c = p.f.evaluate(&p.steps);
+        assert_eq!(expected_c, new_c);
     }
 }
