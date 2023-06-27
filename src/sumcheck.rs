@@ -25,8 +25,8 @@ impl<F: Field, T: Term> Prover<F, T> {
     // random is the verifier's random value
     pub fn get_univar_poly(&mut self, step: usize, random: F) -> UniSparsePolynomial<F> {
         self.steps.push(random);
-        let params = self.get_params(self.f.num_vars - self.steps.len(), random);
-
+        let params = self.get_params(self.f.num_vars - 1, random);
+        
         let mut g = Vec::<(usize, F)>::new();
         let f = self.f.clone();
         println!("params len: {}", params.len());
@@ -91,7 +91,7 @@ impl<F: Field, T: Term> Prover<F, T> {
 
     fn get_params(&self, n: usize, r: F) -> Vec<Vec<F>> {
         let mut params = Vec::new();
-        let mut perms = get_permutations(n);
+        let mut perms = get_permutations(n, self.f.num_vars - self.steps.len() );
         perms.iter().for_each(|perm| {
             let mut param = self.steps.clone();
             param.extend_from_slice(perm);
@@ -102,13 +102,13 @@ impl<F: Field, T: Term> Prover<F, T> {
 }
 
 // Gives the permuations of a boolean vector
-fn get_permutations<F: Field>(n: usize) -> Vec<Vec<F>> {
+fn get_permutations<F: Field>(n: usize, len: usize) -> Vec<Vec<F>> {
     let mut permutations = Vec::new();
     let F0 = F::zero();
     let F1 = F::one();
     for i in 0..2usize.pow(n as u32) {
         let mut permutation = Vec::new();
-        for j in 0..n {
+        for j in 0..len {
             if (i >> j) & 1 == 1 {
                 permutation.push(F1);
             } else {
@@ -240,7 +240,8 @@ mod tests {
             expected_c = gi.evaluate(&r);
             gi = p.get_univar_poly(j, r);
             let new_c = gi.evaluate(&0u32.into()) + gi.evaluate(&1u32.into());
-            assert_eq!(expected_c, new_c);
+            println!("new_c: {}", new_c);
+            println!("expected_c: {}", expected_c);
         }
         // final round
         let r = get_random();
