@@ -1,114 +1,80 @@
-use ark_ff::Field;
+
+use ark_ff::{Field, Zero};
 use ark_poly::{
-    multivariate::{SparsePolynomial, Term},
-    univariate::SparsePolynomial as UniSparsePolynomial,
+    multivariate::{SparsePolynomial, Term, SparseTerm},
+    univariate::{SparsePolynomial as UniSparsePolynomial},
     Polynomial,
 };
+use ark_bls12_381::{Fr, fr};
 use rand::distributions::{Distribution, Standard};
 use rand::Rng;
 
-struct Prover<F: Field, T: Term> {
-    f: SparsePolynomial<F, T>,
-    steps: Vec<F>,
+struct Prover<T: Term> {
+    f: SparsePolynomial<Fr, T>,
+    steps: Vec<Fr>,
 }
 
-impl<F: Field, T: Term> Prover<F, T> {
+impl<T: Term> Prover<T> {
     // Create a new prover
-    pub fn new(poly: SparsePolynomial<F, T>) -> Self {
+    pub fn new(poly: SparsePolynomial<Fr, T>) -> Self {
         Self {
             f: poly.clone(),
             steps: Vec::new(),
         }
     }
 
-    // Returns the univariate polynomial g_i(x_i) for a given index i
-    // random is the verifier's random value
-    pub fn get_univar_poly(&mut self, step: usize, random: F) -> UniSparsePolynomial<F> {
-        self.steps.push(random);
-        let params = self.get_params(self.f.num_vars - 1, random);
-        
-        let mut g = Vec::<(usize, F)>::new();
-        let f = self.f.clone();
-        println!("params len: {}", params.len());
-        println!("paras {:?} ", params);
+    pub fn gen_univar_poly(&mut self, random: Option<Fr>) -> UniSparsePolynomial<Fr> {
+        if random.is_some() {
+            self.steps.push(random.unwrap());
+         }
+        let params = get_permutations(self.f.num_vars - self.steps.len() - 1);
+        let mut poly:UniSparsePolynomial<Fr> = UniSparsePolynomial::from_coefficients_vec(vec![(0, Fr::from(0))]);
         for param in params {
-            let mut f_i = Vec::new();
-            // Each term is a monomial in the polynomial
-            for term in f.terms.iter() {
-                // Getting the vars in the term
-                let (coeff, vars) = term.clone();
-                let mut term_eval = coeff.clone();
+           println!("params {:?}", param);
+           poly = poly + self.evaluatePoly(&param);
+        }
+        println!("poly: {:?}", poly);
+        poly
+    }
 
-                let mut prod = F::one();
-                let mut contains_fixed_var = false;
-                let mut fixed_var_degree = 0;
-
-                // If the term is a constant, we don't need to do anything
-                if vars.is_empty() {
-                    f_i.push((0, coeff));
-                } else {
-                    // we iterate over the variables
-                    for var in vars.iter() {
-                        let (var_index, var_degree) = var.clone();
-                        // We skip the one we want to keep and create the uni-variate polynomial
-                        if var_index == step {
-                            contains_fixed_var = true;
-                            fixed_var_degree = var_degree;
-                        } else {
-                            // evaluting the term for the current permutation
-                            prod *= param[var_index].pow(&[var_degree as u64]);
-                        }
-                    }
-                    // completing the evaluation of the term by multiplying it with the coeff
-                    term_eval *= prod;
-                    if term_eval != F::zero() {
-                        if contains_fixed_var {
-                            f_i.push((fixed_var_degree, term_eval));
-                        } else {
-                            f_i.push((0, term_eval));
-                        }
-                    }
+    fn evaluatePoly(&self, param: &Vec<Fr>) -> UniSparsePolynomial<Fr> {
+        let mut uni_terms: Vec<(usize, Fr)> = Vec::new();
+        for term in self.f.terms.clone().into_iter() {
+            let (mut coeff, vars) = term;
+            let mut prod = coeff;
+            for (var, power) in vars.iter() {
+                match *var {
+                    i if i == self.steps.len() => {
+                        uni_terms.push(
+                            (*power, prod),
+                        )
+                    },
+                    i if i < self.steps.len() =>
+                        uni_terms.push(
+                            (0, prod * self.steps[i].pow([*power as u64])),
+                        ),
+                    _ => uni_terms.push(
+                        (0, prod * param[*var - self.steps.len() - 1].pow([*power as u64])),
+                    ),
                 }
             }
-            // We construct the uni-variate polynomial by adding the terms with the same degree
-            f_i.iter().for_each(|(degree, coeff)| {
-                let mut found = false;
-                for (i, (d, c)) in g.iter_mut().enumerate() {
-                    if *d == *degree {
-                        *c += coeff.clone();
-                        found = true;
-                        break;
-                    }
-                }
-                if !found {
-                    g.push((*degree, coeff.clone()));
-                }
-            });
-            println!("g: {:?}", g);
         }
-        return UniSparsePolynomial::<F>::from_coefficients_vec(g);
+        let poly = UniSparsePolynomial::from_coefficients_vec(uni_terms);
+        println!("poly: {:?}", poly);
+        poly
     }
 
-    fn get_params(&self, n: usize, r: F) -> Vec<Vec<F>> {
-        let mut params = Vec::new();
-        let mut perms = get_permutations(n, self.f.num_vars - self.steps.len() );
-        perms.iter().for_each(|perm| {
-            let mut param = self.steps.clone();
-            param.extend_from_slice(perm);
-            params.push(param);
-        });
-        return params;
     }
-}
+
 
 // Gives the permuations of a boolean vector
-fn get_permutations<F: Field>(n: usize, len: usize) -> Vec<Vec<F>> {
+fn get_permutations<>(n: usize) -> Vec<Vec<Fr>> {
     let mut permutations = Vec::new();
-    let F0 = F::zero();
-    let F1 = F::one();
+    let F0 = Fr::from(0);
+    let F1 = Fr::from(1);
     for i in 0..2usize.pow(n as u32) {
         let mut permutation = Vec::new();
-        for j in 0..len {
+        for j in 0..n {
             if (i >> j) & 1 == 1 {
                 permutation.push(F1);
             } else {
@@ -120,37 +86,32 @@ fn get_permutations<F: Field>(n: usize, len: usize) -> Vec<Vec<F>> {
     permutations
 }
 
-// A function to get a random value from the field
-fn get_random<F: Field>() -> F
-where
-    Standard: Distribution<F>,
-{
-    let mut rng = rand::thread_rng();
-    let distribution = Standard;
-    let random = rng.sample(distribution);
-    random
+pub fn get_random() -> Option<Fr> {
+	let mut rng = rand::thread_rng();
+	let r: Fr = rng.gen();
+	Some(r)
 }
 
 pub fn verify<F: Field, T: Term>(poly: SparsePolynomial<F, T>, claim: F) -> bool
 where
     Standard: Distribution<F>,
 {
-    // 1st round
-    let mut p = Prover::new(poly);
-    let mut gi = p.get_univar_poly(0, get_random());
-    let mut expected_c = gi.evaluate(&0u32.into()) + gi.evaluate(&1u32.into());
-    assert_eq!(expected_c, claim);
-    // middle rounds
-    for j in 1..p.f.num_vars {
-        let r = get_random();
-        expected_c = gi.evaluate(&r);
-        gi = p.get_univar_poly(j, r);
-        let new_c = gi.evaluate(&0u32.into()) + gi.evaluate(&1u32.into());
-        assert_eq!(expected_c, new_c);
-    }
-    // final round
-    let r = get_random();
-    expected_c = gi.evaluate(&r);
+    // // 1st round
+    // let mut p = Prover::new(poly);
+    // let mut gi = p.gen_univar_poly(0, get_random());
+    // let mut expected_c = gi.evaluate(&0u32.into()) + gi.evaluate(&1u32.into());
+    // assert_eq!(expected_c, claim);
+    // // middle rounds
+    // for j in 1..p.f.num_vars {
+    //     let r = get_random();
+    //     expected_c = gi.evaluate(&r);
+    //     gi = p.get_univar_poly(j, r);
+    //     let new_c = gi.evaluate(&0u32.into()) + gi.evaluate(&1u32.into());
+    //     assert_eq!(expected_c, new_c);
+    // }
+    // // final round
+    // let r = get_random();
+    // expected_c = gi.evaluate(&r);
 
     // assert_eq!(expected_c, new_c);
 
@@ -159,62 +120,15 @@ where
 
 #[cfg(test)]
 mod tests {
+    use ark_bls12_381::Fr;
     use ark_poly::{
         multivariate::{SparsePolynomial, SparseTerm, Term},
-        univariate::SparsePolynomial as UniSparsePolynomial,
         DenseMVPolynomial, Polynomial,
     };
 
     use crate::sumcheck::get_random;
-    use ark_test_curves::fp128::Fq;
-
     use super::Prover;
 
-    #[test]
-    fn test_get_univar_poly() {
-        let poly = SparsePolynomial::from_coefficients_vec(
-            3,
-            // 2*x_0^3 + x_0*x_2 + x_1*x_2 + 5
-            vec![
-                (Fq::from(2), SparseTerm::new(vec![(0, 3)])),
-                (Fq::from(1), SparseTerm::new(vec![(0, 1), (2, 1)])),
-                (Fq::from(1), SparseTerm::new(vec![(1, 1), (2, 1)])),
-                (Fq::from(5), SparseTerm::new(vec![])),
-            ],
-        );
-        let mut p = Prover::new(poly);
-        let uni_0 = p.get_univar_poly(0, get_random());
-        let uni_1 = p.get_univar_poly(1, get_random());
-        let uni_2 = p.get_univar_poly(2, get_random());
-
-        let exp1 = UniSparsePolynomial::from_coefficients_vec(
-            // 8x^3 + 2x + 21
-            vec![(3, Fq::from(8)), (1, Fq::from(2)), (0, Fq::from(21))],
-        );
-
-        assert_eq!(exp1, uni_1);
-    }
-
-    #[test]
-    fn test_verifier_first_step() {
-        let poly = SparsePolynomial::from_coefficients_vec(
-            3,
-            // 2*x_0^3 + x_0*x_2 + x_1*x_2 + 5
-            vec![
-                (Fq::from(2), SparseTerm::new(vec![(0, 3)])),
-                (Fq::from(1), SparseTerm::new(vec![(0, 1), (2, 1)])),
-                (Fq::from(1), SparseTerm::new(vec![(1, 1), (2, 1)])),
-                (Fq::from(5), SparseTerm::new(vec![])),
-            ],
-        );
-        let claimed_sum = Fq::from(52);
-
-        let mut p = Prover::new(poly);
-        let uni_1 = p.get_univar_poly(0, get_random());
-        println!("uni_1: {:?}", uni_1);
-        let eval = uni_1.evaluate(&0u32.into()) + uni_1.evaluate(&1u32.into());
-        assert_eq!(eval, claimed_sum);
-    }
 
     #[test]
     fn test_verifier() {
@@ -223,29 +137,30 @@ mod tests {
             3,
             // 2*x_0^3 + x_0*x_2 + x_1*x_2 + 5
             vec![
-                (Fq::from(2), SparseTerm::new(vec![(0, 3)])),
-                (Fq::from(1), SparseTerm::new(vec![(0, 1), (2, 1)])),
-                (Fq::from(1), SparseTerm::new(vec![(1, 1), (2, 1)])),
-                (Fq::from(5), SparseTerm::new(vec![])),
+                (Fr::from(2), SparseTerm::new(vec![(0, 3)])),
+                (Fr::from(1), SparseTerm::new(vec![(0, 1), (2, 1)])),
+                (Fr::from(1), SparseTerm::new(vec![(1, 1), (2, 1)])),
+                (Fr::from(5), SparseTerm::new(vec![])),
             ],
         );
         let mut p = Prover::new(poly);
-        let mut gi = p.get_univar_poly(0, get_random());
-        let claim = Fq::from(52);
+        let mut gi = p.gen_univar_poly(None);
+        let claim = Fr::from(52);
         let mut expected_c = gi.evaluate(&0u32.into()) + gi.evaluate(&1u32.into());
         assert_eq!(expected_c, claim);
         // middle rounds
         for j in 1..p.f.num_vars {
             let r = get_random();
-            expected_c = gi.evaluate(&r);
-            gi = p.get_univar_poly(j, r);
+            expected_c = gi.evaluate(&r.unwrap());
+            gi = p.gen_univar_poly(r);
             let new_c = gi.evaluate(&0u32.into()) + gi.evaluate(&1u32.into());
+            assert_eq!(expected_c, new_c);
             println!("new_c: {}", new_c);
             println!("expected_c: {}", expected_c);
         }
         // final round
         let r = get_random();
-        expected_c = gi.evaluate(&r);
+        expected_c = gi.evaluate(&r.unwrap());
         let new_c = p.f.evaluate(&p.steps);
         // assert_eq!(expected_c, new_c);
     }
